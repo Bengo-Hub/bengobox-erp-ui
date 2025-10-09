@@ -6,5 +6,4 @@ metadata:
 type: Opaque
 stringData:
   NEXT_PUBLIC_API_URL: "https://erpapi.masterspace.co.ke"
-
-
+  VITE_WEBSOCKET_URL: "wss://erpapi.masterspace.co.ke/ws/pos/"
