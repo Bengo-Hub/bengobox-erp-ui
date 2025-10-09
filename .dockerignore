@@ -1,0 +1,4 @@
+# Minimal dockerignore for production builds
+node_modules/
+
+

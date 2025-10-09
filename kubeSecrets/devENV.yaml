@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: erp-ui-env
+  namespace: erp
+type: Opaque
+stringData:
+  NEXT_PUBLIC_API_URL: "https://erpapi.masterspace.co.ke"
+
+
