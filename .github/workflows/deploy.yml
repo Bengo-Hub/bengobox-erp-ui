@@ -1,19 +1,25 @@
 name: Build and Deploy ERP UI
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
 
 jobs:
   deploy:
+    permissions:
+      contents: read
     uses: codevertex/devops-k8s/.github/workflows/reusable-build-deploy.yml@main
     with:
       app_name: erp-ui
       registry_server: docker.io
       registry_namespace: codevertex
       values_file_path: apps/erp-ui/values.yaml
-      deploy: true
+      deploy: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
       namespace: erp
       ssh_deploy: false
+      setup_databases: false
+      env_secret_name: erp-ui-env
+      provider: contabo
+      contabo_api: true
     secrets:
       REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
       REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
