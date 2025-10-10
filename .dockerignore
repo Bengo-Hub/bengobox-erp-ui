@@ -1,4 +1,13 @@
 # Minimal dockerignore for production builds
 node_modules/
 
+# Security: Exclude private keys and certificates
+*.pem
+*.key
+*.crt
+
+# Development files not needed in production
+.env.local
+.env.development
+
 
