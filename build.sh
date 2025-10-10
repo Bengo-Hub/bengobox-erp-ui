@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # =============================================================================
-# BengoERP UI - Production Deployment Script
+# BengoERP UI - Production Deployment Script with Enhanced Error Handling
 # =============================================================================
 # This script handles the complete production deployment process:
 # - Security scanning and validation
@@ -10,9 +10,19 @@
 # - Kubernetes secrets and configuration
 # - Helm chart deployment updates
 # - Multi-environment deployment support
+# - Enhanced error handling and recovery mechanisms
 # =============================================================================
 
 set -euo pipefail
+
+# Error handling and cleanup
+trap 'cleanup_on_error $? $LINENO' ERR
+trap 'cleanup_on_exit' EXIT
+
+# Global error tracking
+ERROR_COUNT=0
+MAX_ERRORS=3
+DEPLOYMENT_FAILED=false
 
 # Color codes for output
 RED='\033[0;31m'
@@ -23,13 +33,76 @@ PURPLE='\033[0;35m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
-# Logging functions
+# Enhanced logging functions
 log_info()    { echo -e "${BLUE}[INFO]${NC} $1"; }
 log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
 log_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
 log_error()   { echo -e "${RED}[ERROR]${NC} $1"; }
 log_step()    { echo -e "${PURPLE}[STEP]${NC} $1"; }
 log_debug()   { echo -e "${CYAN}[DEBUG]${NC} $1"; }
+log_critical() { echo -e "${RED}[CRITICAL]${NC} $1"; }
+
+# Error handling functions
+cleanup_on_error() {
+    local exit_code=$1
+    local line_number=$2
+
+    ERROR_COUNT=$((ERROR_COUNT + 1))
+    log_critical "Error occurred at line $line_number with exit code $exit_code"
+    log_critical "Error count: $ERROR_COUNT/$MAX_ERRORS"
+
+    if [[ $ERROR_COUNT -ge $MAX_ERRORS ]]; then
+        log_critical "Maximum error threshold reached. Initiating emergency cleanup..."
+        DEPLOYMENT_FAILED=true
+        cleanup_on_exit
+        exit 1
+    fi
+}
+
+cleanup_on_exit() {
+    log_info "Performing cleanup operations..."
+
+    # Clean up SSH configuration
+    if [[ -d ~/.ssh ]]; then
+        rm -f ~/.ssh/id_rsa* 2>/dev/null || true
+        unset SSH_AUTH_SOCK 2>/dev/null || true
+    fi
+
+    # Clean up temporary files
+    if [[ -d devops-repo ]]; then
+        rm -rf devops-repo
+    fi
+
+    # Clean up dangling Docker images
+    if command -v docker &> /dev/null; then
+        docker image prune -f >/dev/null 2>&1 || true
+    fi
+
+    if [[ "$DEPLOYMENT_FAILED" == "true" ]]; then
+        log_warning "Deployment failed. Please check logs and consider rollback."
+        return 1
+    fi
+}
+
+rollback_deployment() {
+    log_warning "Initiating rollback procedure..."
+
+    if [[ -n "${KUBE_CONFIG:-}" ]]; then
+        # Rollback to previous ArgoCD revision
+        if command -v kubectl &> /dev/null; then
+            kubectl config use-context "$(kubectl config current-context)" >/dev/null 2>&1 || true
+
+            # Get previous successful revision for rollback
+            if kubectl get application "$APP_NAME" -n argocd -o jsonpath='{.status.history[1].revision}' >/dev/null 2>&1; then
+                PREV_REVISION=$(kubectl get application "$APP_NAME" -n argocd -o jsonpath='{.status.history[1].revision}')
+                log_info "Rolling back to revision: $PREV_REVISION"
+                kubectl patch application "$APP_NAME" -n argocd -p "{\"spec\":{\"source\":{\"targetRevision\":\"$PREV_REVISION\"}}}"
+            fi
+        fi
+    fi
+
+    log_success "Rollback initiated. Monitor deployment status."
+}
 
 # =============================================================================
 # CONFIGURATION & ENVIRONMENT SETUP
@@ -167,40 +240,140 @@ log_success "Container vulnerability scan completed"
 if [[ "$DEPLOY" == "true" ]]; then
     log_step "Starting deployment process..."
 
-    # Authenticate with registry
-    if [[ -n "${REGISTRY_USERNAME:-}" && -n "${REGISTRY_PASSWORD:-}" ]]; then
-        log_info "Logging into container registry"
-        echo "$REGISTRY_PASSWORD" | docker login "$REGISTRY_SERVER" -u "$REGISTRY_USERNAME" --password-stdin
-    fi
+    # Pre-deployment health check
+    pre_deployment_check() {
+        log_info "Performing pre-deployment health checks..."
 
-    # Push container to registry
-    log_info "Pushing container to registry"
-    docker push "${IMAGE_REPO}:${GIT_COMMIT_ID}"
-    log_success "Container pushed to registry"
+        # Check if deployment already exists and get current status
+        if [[ -n "${KUBE_CONFIG:-}" ]] && kubectl get deployment "$APP_NAME" -n "$NAMESPACE" >/dev/null 2>&1; then
+            CURRENT_REPLICAS=$(kubectl get deployment "$APP_NAME" -n "$NAMESPACE" -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+            DESIRED_REPLICAS=$(kubectl get deployment "$APP_NAME" -n "$NAMESPACE" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
 
-    # Setup Kubernetes access
-    if [[ -n "${KUBE_CONFIG:-}" ]]; then
+            if [[ "$CURRENT_REPLICAS" == "$DESIRED_REPLICAS" && "$CURRENT_REPLICAS" != "0" ]]; then
+                log_success "Current deployment is healthy (${CURRENT_REPLICAS}/${DESIRED_REPLICAS} replicas ready)"
+                return 0
+            else
+                log_warning "Current deployment may be unhealthy (${CURRENT_REPLICAS}/${DESIRED_REPLICAS} replicas ready)"
+            fi
+        fi
+
+        return 0
+    }
+
+    pre_deployment_check
+
+    # Enhanced registry authentication with retry
+    authenticate_registry() {
+        local retries=3
+        local delay=5
+
+        for ((i=1; i<=retries; i++)); do
+            if [[ -n "${REGISTRY_USERNAME:-}" && -n "${REGISTRY_PASSWORD:-}" ]]; then
+                log_info "Logging into container registry (attempt $i/$retries)"
+                if echo "$REGISTRY_PASSWORD" | docker login "$REGISTRY_SERVER" -u "$REGISTRY_USERNAME" --password-stdin; then
+                    return 0
+                fi
+                log_warning "Registry authentication failed, retrying in ${delay}s..."
+                sleep "$delay"
+            else
+                log_warning "Registry credentials not provided, skipping authentication"
+                return 0
+            fi
+        done
+
+        log_error "Failed to authenticate with registry after $retries attempts"
+        return 1
+    }
+
+    # Enhanced container push with verification
+    push_container() {
+        local retries=2
+
+        for ((i=1; i<=retries; i++)); do
+            log_info "Pushing container to registry (attempt $i/$retries)"
+            if docker push "${IMAGE_REPO}:${GIT_COMMIT_ID}"; then
+                # Verify image exists in registry
+                if docker manifest inspect "${IMAGE_REPO}:${GIT_COMMIT_ID}" >/dev/null 2>&1; then
+                    return 0
+                else
+                    log_warning "Image push completed but manifest not found, retrying..."
+                fi
+            fi
+            sleep 2
+        done
+
+        log_error "Failed to push container after $retries attempts"
+        return 1
+    }
+
+    # Enhanced Kubernetes setup with validation
+    setup_kubernetes() {
+        if [[ -z "${KUBE_CONFIG:-}" ]]; then
+            log_warning "Kubernetes config not provided, skipping K8s setup"
+            return 0
+        fi
+
         log_step "Setting up Kubernetes access..."
+
+        # Validate kubeconfig
+        if ! kubectl cluster-info >/dev/null 2>&1; then
+            log_error "Invalid Kubernetes configuration"
+            return 1
+        fi
 
         mkdir -p ~/.kube
         echo "$KUBE_CONFIG" | base64 -d > ~/.kube/config
 
-        # Ensure namespace exists
-        if kubectl get namespace "$NAMESPACE" &>/dev/null; then
-            log_info "Namespace $NAMESPACE already exists"
-        else
+        # Ensure namespace exists with retry
+        kubectl get namespace "$NAMESPACE" >/dev/null 2>&1 || {
             log_info "Creating namespace: $NAMESPACE"
-            kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
-        fi
+            kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f - || {
+                log_error "Failed to create namespace $NAMESPACE"
+                return 1
+            }
+        }
 
-        # Apply Kubernetes secrets if devENV.yaml exists
+        # Apply secrets with validation
         if [[ -f "kubeSecrets/devENV.yaml" ]]; then
             log_info "Applying Kubernetes secrets"
-            kubectl apply -f kubeSecrets/devENV.yaml || log_warning "Failed to apply some secrets"
+            if kubectl apply -f kubeSecrets/devENV.yaml; then
+                log_success "Kubernetes secrets applied successfully"
+            else
+                log_warning "Some secrets may have failed to apply"
+            fi
         fi
 
-        log_success "Kubernetes access configured"
+        return 0
+    }
+
+    # Main deployment execution
+    if ! authenticate_registry; then
+        log_critical "Registry authentication failed, initiating rollback..."
+        rollback_deployment
+        exit 1
     fi
+
+    if ! push_container; then
+        log_critical "Container push failed, initiating rollback..."
+        rollback_deployment
+        exit 1
+    fi
+
+    if ! setup_kubernetes; then
+        log_critical "Kubernetes setup failed, initiating rollback..."
+        rollback_deployment
+        exit 1
+    fi
+
+    log_success "Container pushed to registry"
+
+    # Setup Kubernetes access
+    setup_kubernetes || {
+        log_critical "Kubernetes access setup failed"
+        exit 1
+    }
+
+    log_success "Kubernetes access configured"
 
     # Note: UI doesn't need database setup typically, but framework is here if needed
     if [[ "$SETUP_DATABASES" == "true" && -n "${KUBE_CONFIG:-}" ]]; then
@@ -289,31 +462,85 @@ if [[ "$DEPLOY" == "true" ]]; then
     if [[ -n "${KUBE_CONFIG:-}" ]]; then
         log_step "Updating Helm deployment..."
 
-        # Clone devops repository
-        git clone "https://github.com/${DEVOPS_REPO}.git" devops-repo
-        cd devops-repo
+        # Enhanced Helm deployment with rollback support
+        update_helm_deployment() {
+            local temp_dir="devops-repo"
 
-        # Configure git
-        git config user.name "$GIT_USER"
-        git config user.email "$GIT_EMAIL"
-        git pull --rebase
+            # Clone devops repository with retry
+            local clone_retries=3
+            for ((i=1; i<=clone_retries; i++)); do
+                log_info "Cloning devops repository (attempt $i/$clone_retries)"
+                if git clone "https://github.com/${DEVOPS_REPO}.git" "$temp_dir"; then
+                    break
+                fi
+                if [[ $i -eq $clone_retries ]]; then
+                    log_error "Failed to clone devops repository after $clone_retries attempts"
+                    return 1
+                fi
+                sleep 5
+            done
 
-        # Update Helm values
-        if [[ -f "$VALUES_FILE_PATH" ]]; then
-            log_info "Updating Helm values with new image"
-            yq -yi ".image.repository = \"${IMAGE_REPO}\" | .image.tag = \"${GIT_COMMIT_ID}\"" "$VALUES_FILE_PATH"
+            cd "$temp_dir"
 
-            git add "$VALUES_FILE_PATH"
-            git commit -m "${APP_NAME}:${GIT_COMMIT_ID} released" || log_info "No changes to commit"
-            git push
+            # Configure git
+            git config user.name "$GIT_USER"
+            git config user.email "$GIT_EMAIL"
 
-            log_success "Helm deployment updated"
-        else
-            log_warning "Helm values file not found: $VALUES_FILE_PATH"
+            # Pull latest changes
+            if ! git pull --rebase; then
+                log_warning "Failed to pull latest changes, continuing with local repo"
+            fi
+
+            # Update Helm values with validation
+            if [[ -f "$VALUES_FILE_PATH" ]]; then
+                log_info "Updating Helm values with new image"
+
+                # Backup original file
+                cp "$VALUES_FILE_PATH" "${VALUES_FILE_PATH}.backup"
+
+                # Update image repository and tag
+                if yq -yi ".image.repository = \"${IMAGE_REPO}\" | .image.tag = \"${GIT_COMMIT_ID}\"" "$VALUES_FILE_PATH"; then
+                    log_success "Helm values updated successfully"
+
+                    # Validate YAML syntax
+                    if yq eval "$VALUES_FILE_PATH" >/dev/null 2>&1; then
+                        log_success "Helm values file is valid YAML"
+                    else
+                        log_error "Invalid YAML syntax in values file, restoring backup"
+                        mv "${VALUES_FILE_PATH}.backup" "$VALUES_FILE_PATH"
+                        return 1
+                    fi
+
+                    # Commit and push changes
+                    if git add "$VALUES_FILE_PATH" && git commit -m "${APP_NAME}:${GIT_COMMIT_ID} released"; then
+                        if git push; then
+                            log_success "Helm deployment updated"
+                        else
+                            log_error "Failed to push Helm changes"
+                            return 1
+                        fi
+                    else
+                        log_info "No changes to commit"
+                    fi
+                else
+                    log_error "Failed to update Helm values, restoring backup"
+                    mv "${VALUES_FILE_PATH}.backup" "$VALUES_FILE_PATH"
+                    return 1
+                fi
+            else
+                log_warning "Helm values file not found: $VALUES_FILE_PATH"
+            fi
+
+            cd ..
+            rm -rf "$temp_dir"
+            return 0
+        }
+
+        if ! update_helm_deployment; then
+            log_critical "Helm deployment update failed, initiating rollback..."
+            rollback_deployment
+            exit 1
         fi
-
-        cd ..
-        rm -rf devops-repo
     fi
 
     # Handle VPS deployment if configured
