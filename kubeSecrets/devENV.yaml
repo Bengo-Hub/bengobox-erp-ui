@@ -5,5 +5,21 @@ metadata:
   namespace: erp
 type: Opaque
 stringData:
+  # ============================================
+  # API CONFIGURATION
+  # ============================================
   NEXT_PUBLIC_API_URL: "https://erpapi.masterspace.co.ke"
+  VITE_API_URL: "https://erpapi.masterspace.co.ke"
+  API_URL: "https://erpapi.masterspace.co.ke"
+  
+  # ============================================
+  # WEBSOCKET CONFIGURATION
+  # ============================================
+  NEXT_PUBLIC_WS_URL: "wss://erpapi.masterspace.co.ke/ws"
   VITE_WEBSOCKET_URL: "wss://erpapi.masterspace.co.ke/ws/pos/"
+  
+  # ============================================
+  # APPLICATION CONFIGURATION
+  # ============================================
+  NODE_ENV: "production"
+  NEXT_PUBLIC_ENV: "production"

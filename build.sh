@@ -12,7 +12,7 @@ else
   GIT_COMMIT_ID=${GITHUB_SHA::8}
 fi
 
-IMAGE_REPO=${IMAGE_REPO:-docker.io/codevertex/erp-ui}
+IMAGE_REPO=${IMAGE_REPO:-docker.io/Bengo-Hub/erp-ui}
 
 echo "[INFO] Trivy FS scan"
 trivy fs . --exit-code $TRIVY_ECODE || true
