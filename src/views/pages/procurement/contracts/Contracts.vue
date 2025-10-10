@@ -52,7 +52,8 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, h } from 'vue';
+import Button from 'primevue/button';
 import procurementService from '@/services/procurementService';
 
 const contracts = ref([]);
@@ -89,12 +90,21 @@ const createContract = async () => {
 
 const supplierCell = (row) => row.supplier;
 
-const actions = (row) => (
-  <div class="flex gap-2">
-    <Button label="Activate" size="small" @click={() => changeStatus(row.id, 'activate')} />
-    <Button label="Terminate" size="small" severity="danger" @click={() => changeStatus(row.id, 'terminate')} />
-  </div>
-);
+const actions = (row) => {
+  return h('div', { class: 'flex gap-2' }, [
+    h(Button, {
+      label: 'Activate',
+      size: 'small',
+      onClick: () => changeStatus(row.id, 'activate')
+    }),
+    h(Button, {
+      label: 'Terminate',
+      size: 'small',
+      severity: 'danger',
+      onClick: () => changeStatus(row.id, 'terminate')
+    })
+  ]);
+};
 
 const changeStatus = async (id, action) => {
   if (action === 'activate') await procurementService.activateContract(id);

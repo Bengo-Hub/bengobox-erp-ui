@@ -22,8 +22,20 @@ export default defineConfig({
                 //stream: true
             }
         }),
-        vue(),
-        vueJsx(),
+        vue({
+            template: {
+                compilerOptions: {
+                    // Enable JSX in Vue SFC templates
+                    jsx: true
+                }
+            }
+        }),
+        vueJsx({
+            // Enable JSX in Vue SFC script blocks only
+            include: /\.(jsx|js|ts)$/,
+            transformOn: true,
+            mergeProps: true
+        }),
         Components({
             resolvers: [PrimeVueResolver()]
         })
