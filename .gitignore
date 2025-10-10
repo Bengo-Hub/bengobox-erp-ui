@@ -14,3 +14,8 @@ dist
 .eslintcache
 api-generator/typedoc.json
 **/.DS_Store
+
+# Development SSL certificates (should not be in version control)
+localhost*.pem
+*.key
+*.crt
