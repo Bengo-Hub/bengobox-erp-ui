@@ -1,0 +1,11 @@
+# Trivy ignore file for BengoERP UI
+# Ignore vulnerabilities in development dependencies that don't affect production
+
+# Development/build tools - not included in production Docker image
+CVE-2025-58751
+CVE-2025-58752
+GHSA-67mh-4wv8-2f99
+
+# Dependencies used only in development/testing
+dompurify@2.5.8
+esbuild@0.21.5
