@@ -583,7 +583,7 @@ if [[ "$DEPLOY" == "true" ]]; then
                 cp "$VALUES_FILE_PATH" "${VALUES_FILE_PATH}.backup"
 
                 # Update image repository and tag
-                if yq -yi ".image.repository = \"${IMAGE_REPO}\" | .image.tag = \"${GIT_COMMIT_ID}\"" "$VALUES_FILE_PATH"; then
+                if yq -i ".image.repository = \"${IMAGE_REPO}\" | .image.tag = \"${GIT_COMMIT_ID}\"" "$VALUES_FILE_PATH"; then
                     log_success "Helm values updated successfully"
 
                     # Validate YAML syntax
