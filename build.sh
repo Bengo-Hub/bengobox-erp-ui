@@ -625,6 +625,18 @@ if [[ "$DEPLOY" == "true" ]]; then
             rollback_deployment
             exit 1
         fi
+
+        # Refresh ArgoCD application to trigger deployment
+        log_info "Refreshing ArgoCD application to trigger deployment..."
+        if kubectl get application "$APP_NAME" -n argocd >/dev/null 2>&1; then
+            if kubectl patch application "$APP_NAME" -n argocd -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}' --type=merge; then
+                log_success "ArgoCD application refreshed - deployment should start"
+            else
+                log_warning "Failed to refresh ArgoCD application"
+            fi
+        else
+            log_warning "ArgoCD application $APP_NAME not found - may need manual sync"
+        fi
     fi
 
     # Handle VPS deployment if configured
@@ -699,6 +711,14 @@ get_service_urls() {
                 urls="${urls}(Cluster internal URL - configure ingress for external access)"
             fi
         fi
+    fi
+
+    # Debug: Show what we found
+    if [[ -z "$urls" ]]; then
+        log_warning "No service URLs found - ingress may not be ready yet"
+        log_info "Checking ingress status..."
+        kubectl get ingress -n "$NAMESPACE" 2>/dev/null || log_info "No ingress resources found in namespace $NAMESPACE"
+        kubectl get certificate -n "$NAMESPACE" 2>/dev/null || log_info "No certificates found in namespace $NAMESPACE"
     fi
 
     echo -e "$urls" | sed '/^$/d' | head -5
