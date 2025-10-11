@@ -570,8 +570,16 @@ if [[ "$DEPLOY" == "true" ]]; then
             git config user.name "$GIT_USER"
             git config user.email "$GIT_EMAIL"
 
-            # Set up GitHub token authentication if available
-            if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+            # Set up SSH authentication for git if available
+            if [[ -n "${SSH_PRIVATE_KEY:-}" ]]; then
+                log_info "Setting up SSH authentication for git operations"
+                mkdir -p ~/.ssh
+                echo "$SSH_PRIVATE_KEY" | base64 -d > ~/.ssh/git_key
+                chmod 600 ~/.ssh/git_key
+                ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null || true
+                git remote set-url origin "git@github.com:${DEVOPS_REPO}.git"
+                export GIT_SSH_COMMAND="ssh -i ~/.ssh/git_key -o StrictHostKeyChecking=no"
+            elif [[ -n "${GITHUB_TOKEN:-}" ]]; then
                 log_info "Setting up GitHub token authentication"
                 git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${DEVOPS_REPO}.git"
             fi
@@ -671,7 +679,7 @@ if [[ "$DEPLOY" == "true" ]]; then
             log_info "Attempting to create ArgoCD application..."
             # Try multiple possible paths for the ArgoCD application file
             APP_CREATED=false
-            for app_path in "$TEMP_DIR/apps/$APP_NAME/app.yaml" "$TEMP_DIR/apps/erp-ui/app.yaml" "$TEMP_DIR/erp-ui/app.yaml"; do
+            for app_path in "$temp_dir/apps/$APP_NAME/app.yaml" "$temp_dir/apps/erp-ui/app.yaml" "$temp_dir/erp-ui/app.yaml"; do
                 if [[ -f "$app_path" ]]; then
                     if kubectl apply -f "$app_path" 2>/dev/null; then
                         log_success "ArgoCD application created successfully from $app_path"
@@ -688,7 +696,8 @@ if [[ "$DEPLOY" == "true" ]]; then
 
             if [[ "$APP_CREATED" == "false" ]]; then
                 log_error "Failed to create ArgoCD application - application files not found in expected locations"
-                log_info "Expected paths: $TEMP_DIR/apps/$APP_NAME/app.yaml, $TEMP_DIR/apps/erp-ui/app.yaml, $TEMP_DIR/erp-ui/app.yaml"
+                log_info "Expected paths: $temp_dir/apps/$APP_NAME/app.yaml, $temp_dir/apps/erp-ui/app.yaml, $temp_dir/erp-ui/app.yaml"
+                log_info "Please create the ArgoCD application manually or ensure the repository structure is correct"
             fi
         fi
     fi
