@@ -54,7 +54,7 @@ jobs:
         REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
         REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
         GITHUB_SHA: ${{ github.sha }}
-        DEPLOY: ${{ env.DEPLOY }}
+        DEPLOY: true
         SETUP_DATABASES: ${{ env.SETUP_DATABASES }}
         NAMESPACE: ${{ env.NAMESPACE }}
         ENV_SECRET_NAME: ${{ env.ENV_SECRET_NAME }}
