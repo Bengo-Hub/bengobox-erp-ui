@@ -21,15 +21,31 @@ jobs:
     - name: Install DevOps Tools
       uses: Bengo-Hub/devops-k8s/.github/actions/install-devops-tools@main
 
-    - name: Set deployment variables
+    - name: Validate Kubernetes configuration
+      env:
+        KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
       run: |
-        echo "DEPLOY=true" >> $GITHUB_ENV
-        echo "SETUP_DATABASES=false" >> $GITHUB_ENV
-        echo "NAMESPACE=erp" >> $GITHUB_ENV
-        echo "ENV_SECRET_NAME=erp-ui-env" >> $GITHUB_ENV
-        echo "REGISTRY_SERVER=docker.io" >> $GITHUB_ENV
-        echo "REGISTRY_NAMESPACE=codevertex" >> $GITHUB_ENV
-        echo "VALUES_FILE_PATH=apps/erp-ui/values.yaml" >> $GITHUB_ENV
+        echo "::group::Validating KUBE_CONFIG"
+        if [ -z "$KUBE_CONFIG" ]; then
+          echo "❌ KUBE_CONFIG secret not set in repository"
+          echo "Please configure KUBE_CONFIG secret with your base64-encoded kubeconfig"
+          exit 1
+        fi
+
+        # Test if it's valid base64
+        if ! echo "$KUBE_CONFIG" | base64 -d >/dev/null 2>&1; then
+          echo "❌ KUBE_CONFIG is not valid base64"
+          exit 1
+        fi
+
+        # Test if the decoded config is valid YAML
+        if ! echo "$KUBE_CONFIG" | base64 -d | head -5 | grep -q "apiVersion\|kind\|clusters\|contexts\|users"; then
+          echo "❌ KUBE_CONFIG does not appear to be a valid kubeconfig file"
+          exit 1
+        fi
+
+        echo "✅ KUBE_CONFIG validation passed"
+        echo "::endgroup::"
 
     - name: Run production deployment
       env:
