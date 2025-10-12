@@ -27,8 +27,8 @@ jobs:
       run: |
         echo "::group::Validating KUBE_CONFIG"
         if [ -z "$KUBE_CONFIG" ]; then
-          echo "❌ KUBE_CONFIG secret not set in repository"
-          echo "Please configure KUBE_CONFIG secret with your base64-encoded kubeconfig"
+          echo "❌ KUBE_CONFIG secret not set in organization"
+          echo "Please configure KUBE_CONFIG organization secret with your base64-encoded kubeconfig"
           exit 1
         fi
 
