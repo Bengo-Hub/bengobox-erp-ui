@@ -21,31 +21,19 @@ jobs:
     - name: Install DevOps Tools
       uses: Bengo-Hub/devops-k8s/.github/actions/install-devops-tools@main
 
-    - name: Validate Kubernetes configuration
-      env:
-        KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+    - name: Set deployment variables
       run: |
-        echo "::group::Validating KUBE_CONFIG"
-        if [ -z "$KUBE_CONFIG" ]; then
-          echo "❌ KUBE_CONFIG secret not set in organization"
-          echo "Please configure KUBE_CONFIG organization secret with your base64-encoded kubeconfig"
-          exit 1
-        fi
-
-        # Test if it's valid base64
-        if ! echo "$KUBE_CONFIG" | base64 -d >/dev/null 2>&1; then
-          echo "❌ KUBE_CONFIG is not valid base64"
-          exit 1
-        fi
-
-        # Test if the decoded config is valid YAML
-        if ! echo "$KUBE_CONFIG" | base64 -d | head -5 | grep -q "apiVersion\|kind\|clusters\|contexts\|users"; then
-          echo "❌ KUBE_CONFIG does not appear to be a valid kubeconfig file"
-          exit 1
-        fi
-
-        echo "✅ KUBE_CONFIG validation passed"
-        echo "::endgroup::"
+        echo "DEPLOY=true" >> $GITHUB_ENV
+        echo "SETUP_DATABASES=false" >> $GITHUB_ENV
+        echo "DB_TYPES=postgres,redis" >> $GITHUB_ENV
+        echo "NAMESPACE=erp" >> $GITHUB_ENV
+        echo "ENV_SECRET_NAME=erp-ui-env" >> $GITHUB_ENV
+        echo "REGISTRY_SERVER=docker.io" >> $GITHUB_ENV
+        echo "REGISTRY_NAMESPACE=codevertex" >> $GITHUB_ENV
+        echo "VALUES_FILE_PATH=apps/erp-ui/values.yaml" >> $GITHUB_ENV
+        echo "DEPLOYMENT_SUMMARY_TITLE=BengoERP UI Deployment Summary" >> $GITHUB_ENV
+        echo "DEPLOYMENT_SUCCESS_MESSAGE=BengoERP UI deployment completed! The UI should be accessible via the URLs above." >> $GITHUB_ENV
+        echo "APPLICATION_DISPLAY_NAME=BengoERP UI" >> $GITHUB_ENV
 
     - name: Run production deployment
       env:
@@ -70,6 +58,10 @@ jobs:
         SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         PROVIDER: contabo
         CONTABO_API: true
+        # Generic branding variables
+        DEPLOYMENT_SUMMARY_TITLE: ${{ env.DEPLOYMENT_SUMMARY_TITLE }}
+        DEPLOYMENT_SUCCESS_MESSAGE: ${{ env.DEPLOYMENT_SUCCESS_MESSAGE }}
+        APPLICATION_DISPLAY_NAME: ${{ env.APPLICATION_DISPLAY_NAME }}
       run: |
         chmod +x build.sh
         ./build.sh
