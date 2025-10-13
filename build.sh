@@ -209,10 +209,11 @@ if [[ "$DEPLOY" == "true" ]]; then
     # The default GITHUB_TOKEN only has permissions for the current repository
     export GH_TOKEN=${GH_PAT:-${GITHUB_TOKEN}}
 
-    # Call the reusable workflow with app-specific parameters
+    # Call the reusable workflow with explicit token for cross-repo access
     gh workflow run 196475028 \
         --repo Bengo-Hub/devops-k8s \
         --ref main \
+        --token "$GH_TOKEN" \
         --field app_name="${APP_NAME}" \
         --field registry_server="${REGISTRY_SERVER}" \
         --field registry_namespace="${REGISTRY_NAMESPACE}" \
@@ -250,11 +251,11 @@ if [[ "$DEPLOY" == "true" ]]; then
         log_info "Checking for service URLs... (${elapsed}s/${workflow_wait_time}s)"
 
         # Check if the workflow run has completed and has service_urls output
-        if gh run list --repo Bengo-Hub/devops-k8s --workflow=196475028 --limit=1 --json conclusion,databaseId --jq '.[] | select(.conclusion == "success") | .databaseId' >/dev/null 2>&1; then
+        if gh run list --repo Bengo-Hub/devops-k8s --workflow=196475028 --limit=1 --json conclusion,databaseId --jq '.[] | select(.conclusion == "success") | .databaseId' --token "$GH_TOKEN" >/dev/null 2>&1; then
           log_info "Deployment workflow completed, fetching service URLs..."
 
           # Get the latest successful run and extract service URLs
-          RUN_ID=$(gh run list --repo Bengo-Hub/devops-k8s --workflow=196475028 --limit=1 --json databaseId --jq '.[0].databaseId')
+          RUN_ID=$(gh run list --repo Bengo-Hub/devops-k8s --workflow=196475028 --limit=1 --json databaseId --jq '.[0].databaseId' --token "$GH_TOKEN")
           SERVICE_URLS=$(gh run view "$RUN_ID" --log | grep -A 10 "service_urls<<" | tail -n +2 | head -n -1 | sed 's/^  //')
 
           if [[ -n "$SERVICE_URLS" && "$SERVICE_URLS" != *"⏳ Services still starting up"* ]]; then
