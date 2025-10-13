@@ -53,13 +53,3 @@ jobs:
         deployment_summary_title: BengoERP UI Deployment Summary
         deployment_success_message: BengoERP UI deployment completed! The UI should be accessible via the URLs above.
         application_display_name: BengoERP UI
-      secrets:
-        REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
-        REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
-        KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
-        SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-        DOCKER_SSH_KEY: ${{ secrets.DOCKER_SSH_KEY }}
-        CONTABO_CLIENT_ID: ${{ secrets.CONTABO_CLIENT_ID }}
-        CONTABO_CLIENT_SECRET: ${{ secrets.CONTABO_CLIENT_SECRET }}
-        CONTABO_API_USERNAME: ${{ secrets.CONTABO_API_USERNAME }}
-        CONTABO_API_PASSWORD: ${{ secrets.CONTABO_API_PASSWORD }}
