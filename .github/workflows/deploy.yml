@@ -1,5 +1,10 @@
 name: Build and Deploy ERP UI
 
+# Prevent concurrent deployments for the same app
+concurrency:
+  group: deploy-${{ github.ref_name }}-erp-ui
+  cancel-in-progress: true
+
 on:
   push:
     branches: [ main, master ]
@@ -10,32 +15,13 @@ jobs:
     permissions:
       contents: write
       id-token: write
-
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Full history for proper git operations
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Install DevOps Tools
-      uses: Bengo-Hub/devops-k8s/.github/actions/install-devops-tools@main
-
-    - name: Set deployment variables
-      run: |
-        echo "DEPLOY=true" >> $GITHUB_ENV
-        echo "SETUP_DATABASES=false" >> $GITHUB_ENV
-        echo "DB_TYPES=postgres,redis" >> $GITHUB_ENV
-        echo "NAMESPACE=erp" >> $GITHUB_ENV
-        echo "ENV_SECRET_NAME=erp-ui-env" >> $GITHUB_ENV
-        echo "REGISTRY_SERVER=docker.io" >> $GITHUB_ENV
-        echo "REGISTRY_NAMESPACE=codevertex" >> $GITHUB_ENV
-        echo "VALUES_FILE_PATH=apps/erp-ui/values.yaml" >> $GITHUB_ENV
-        echo "DEPLOYMENT_SUMMARY_TITLE=BengoERP UI Deployment Summary" >> $GITHUB_ENV
-        echo "DEPLOYMENT_SUCCESS_MESSAGE=BengoERP UI deployment completed! The UI should be accessible via the URLs above." >> $GITHUB_ENV
-        echo "APPLICATION_DISPLAY_NAME=BengoERP UI" >> $GITHUB_ENV
-
-    - name: Run production deployment
+    - name: Run deployment
       uses: Bengo-Hub/devops-k8s/.github/workflows/reusable-build-deploy.yml@main
       with:
         app_name: erp-ui
@@ -44,8 +30,8 @@ jobs:
         deploy: true
         values_file_path: apps/erp-ui/values.yaml
         namespace: erp
-        git_user: ${{ secrets.GIT_USER }}
-        git_email: ${{ secrets.GIT_EMAIL }}
+        git_user: Titus Owuor
+        git_email: titusowuor30@gmail.com
         devops_repo: Bengo-Hub/devops-k8s
         setup_databases: false
         provider: contabo
@@ -53,3 +39,5 @@ jobs:
         deployment_summary_title: BengoERP UI Deployment Summary
         deployment_success_message: BengoERP UI deployment completed! The UI should be accessible via the URLs above.
         application_display_name: BengoERP UI
+        # Standard file skipping for UI (no payment integrations)
+        skip_files: "localhost*.pem,*.key,*.crt"
