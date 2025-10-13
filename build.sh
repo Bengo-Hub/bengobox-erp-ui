@@ -346,7 +346,7 @@ if [[ "$DEPLOY" == "true" ]]; then
                         # Use appropriate authentication method for push with better error handling
                         if [[ -n "${DOCKER_SSH_KEY:-}" ]]; then
                             log_info "Pushing via SSH authentication"
-                            if git push 2>&1 | tee /tmp/git-push.log; then
+                    if git push 2>&1 | tee /tmp/git-push.log; then
                                 log_success "Git push successful"
                             else
                                 GIT_ERROR=$(cat /tmp/git-push.log)
@@ -359,9 +359,10 @@ if [[ "$DEPLOY" == "true" ]]; then
                                 log_error "GitHub token not available for HTTPS authentication"
                                 log_warning "Git push skipped - manual push may be required"
                             else
-                                # Use credential helper to avoid URL encoding issues
-                                git remote set-url origin "https://x-access-token:${GITHUB_TOKEN:-${GH_PAT:-}}@github.com/${DEVOPS_REPO}.git"
-                                if git push 2>&1 | tee /tmp/git-push.log; then
+                        # Use dedicated origin for pushing with token to avoid interfering with fetch origin
+                        if git remote | grep -q push-origin; then git remote remove push-origin || true; fi
+                        git remote add push-origin "https://x-access-token:${GITHUB_TOKEN:-${GH_PAT:-}}@github.com/${DEVOPS_REPO}.git"
+                        if git push push-origin HEAD:main 2>&1 | tee /tmp/git-push.log; then
                                     log_success "Git push successful"
                                 else
                                     GIT_ERROR=$(cat /tmp/git-push.log)
