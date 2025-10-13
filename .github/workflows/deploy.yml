@@ -11,33 +11,22 @@ on:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      id-token: write
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0  # Full history for proper git operations
-
-    - name: Run deployment
-      uses: Bengo-Hub/devops-k8s/.github/workflows/reusable-build-deploy.yml@main
-      with:
-        app_name: erp-ui
-        registry_server: docker.io
-        registry_namespace: codevertex
-        deploy: true
-        values_file_path: apps/erp-ui/values.yaml
-        namespace: erp
-        git_user: Titus Owuor
-        git_email: titusowuor30@gmail.com
-        devops_repo: Bengo-Hub/devops-k8s
-        setup_databases: false
-        provider: contabo
-        contabo_api: true
-        deployment_summary_title: BengoERP UI Deployment Summary
-        deployment_success_message: BengoERP UI deployment completed! The UI should be accessible via the URLs above.
-        application_display_name: BengoERP UI
-        # Standard file skipping for UI (no payment integrations)
-        skip_files: "localhost*.pem,*.key,*.crt"
+    uses: Bengo-Hub/devops-k8s/.github/workflows/reusable-build-deploy.yml@main
+    with:
+      app_name: erp-ui
+      registry_server: docker.io
+      registry_namespace: codevertex
+      deploy: true
+      values_file_path: apps/erp-ui/values.yaml
+      namespace: erp
+      git_user: Titus Owuor
+      git_email: titusowuor30@gmail.com
+      devops_repo: Bengo-Hub/devops-k8s
+      setup_databases: false
+      provider: contabo
+      contabo_api: true
+      deployment_summary_title: BengoERP UI Deployment Summary
+      deployment_success_message: BengoERP UI deployment completed! The UI should be accessible via the URLs above.
+      application_display_name: BengoERP UI
+      # Standard file skipping for UI (no payment integrations)
+      skip_files: "localhost*.pem,*.key,*.crt"
