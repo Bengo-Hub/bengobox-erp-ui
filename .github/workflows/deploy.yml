@@ -53,6 +53,7 @@ jobs:
         GIT_USER: ${{ secrets.GIT_USER }}
         GIT_EMAIL: ${{ secrets.GIT_EMAIL }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_PAT: ${{ secrets.GH_PAT }}
         # SSH deployment variables
         SSH_HOST: ${{ secrets.SSH_HOST }}
         SSH_USER: ${{ secrets.SSH_USER }}

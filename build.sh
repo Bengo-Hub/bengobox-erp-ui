@@ -205,6 +205,10 @@ if [[ "$DEPLOY" == "true" ]]; then
     export GITHUB_REPOSITORY=${GITHUB_REPOSITORY:-}
     export GITHUB_SHA=${GITHUB_SHA:-}
 
+    # For cross-repository workflow triggering, use a PAT with workflow permissions
+    # The default GITHUB_TOKEN only has permissions for the current repository
+    export GH_TOKEN=${GH_PAT:-${GITHUB_TOKEN}}
+
     # Call the reusable workflow with app-specific parameters
     gh workflow run 196475028 \
         --repo Bengo-Hub/devops-k8s \
