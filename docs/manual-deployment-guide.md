@@ -295,6 +295,36 @@ kubectl get applications.argoproj.io erp-ui -n argocd -o jsonpath='{.status.sync
 ```
 
 ### 5.2 Pod Startup Issues
+# 5.6 Ingress 503 (Service Temporarily Unavailable)
+
+**Likely causes**: No service endpoints (selector/label mismatch), app not listening on target port, or ingress pointing to wrong port.
+
+Run on VPS:
+```bash
+# Ingress
+kubectl -n erp get ingress
+kubectl -n erp describe ingress erp-ui || true
+
+# Service and endpoints
+kubectl -n erp get svc erp-ui -o wide
+kubectl -n erp get endpoints erp-ui -o wide
+
+# Verify pod labels vs service selector
+kubectl -n erp describe svc erp-ui | sed -n '/Selector/,$p' | head -5
+kubectl -n erp get pods --show-labels | grep erp-ui || kubectl -n erp get pods --show-labels
+
+# Verify container is listening on 3000
+kubectl -n erp logs deploy/erp-ui --tail=100 || true
+kubectl -n erp exec deploy/erp-ui -- sh -lc 'wget -qO- http://127.0.0.1:3000/health || curl -sf http://127.0.0.1:3000/health || true'
+
+# Ingress controller logs
+kubectl -n ingress-nginx logs deploy/ingress-nginx-controller --tail=200 | grep -Ei 'endpoint|upstream|no.*endpoints|unavailable' || true
+```
+
+Fixes:
+- If endpoints empty: fix Service selector to match Deployment labels or relabel Deployment; then `argocd app sync erp-ui`.
+- If port mismatch: ensure chart `service.targetPort=3000` and container `PORT=3000` (server.js listens on 3000).
+- Restart after fix: `kubectl -n erp rollout restart deploy/erp-ui`.
 ```bash
 # Check pod logs for errors
 kubectl logs -f deployment/erp-ui -n erp
