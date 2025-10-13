@@ -296,13 +296,24 @@ if [[ "$DEPLOY" == "true" ]]; then
 
             # Clone or update devops-k8s repo
             if [[ ! -d "devops-k8s" ]]; then
-                # Use SSH URL if SSH key is available, otherwise use HTTPS with token
+                # Try SSH first, fallback to HTTPS if SSH fails
                 if [[ -n "${DOCKER_SSH_KEY:-}" ]]; then
-                    log_info "Using SSH authentication for git operations"
-                    git clone "git@github.com:${DEVOPS_REPO}.git" devops-k8s || log_warning "Failed to clone devops-k8s"
+                    log_info "Attempting SSH authentication for git operations"
+                    if git clone "git@github.com:${DEVOPS_REPO}.git" devops-k8s 2>/dev/null; then
+                        log_success "SSH clone successful"
+                    else
+                        log_warning "SSH clone failed, trying HTTPS authentication"
+                        git clone "https://${GITHUB_TOKEN:-${GH_PAT:-}}github.com/${DEVOPS_REPO}.git" devops-k8s || {
+                            log_error "Failed to clone devops-k8s repository"
+                            exit 1
+                        }
+                    fi
                 else
                     log_info "Using HTTPS authentication for git operations"
-                    git clone "https://${GITHUB_TOKEN:-${GH_PAT:-}}github.com/${DEVOPS_REPO}.git" devops-k8s || log_warning "Failed to clone devops-k8s"
+                    git clone "https://${GITHUB_TOKEN:-${GH_PAT:-}}github.com/${DEVOPS_REPO}.git" devops-k8s || {
+                        log_error "Failed to clone devops-k8s repository"
+                        exit 1
+                    }
                 fi
             fi
 
@@ -344,35 +355,9 @@ if [[ "$DEPLOY" == "true" ]]; then
             fi
         fi
 
-        # Trigger ArgoCD sync for applications
-        if [[ -n "${KUBE_CONFIG:-}" ]]; then
-            log_step "Triggering ArgoCD sync..."
-
-            # Setup kubeconfig
-            mkdir -p ~/.kube
-            echo "$KUBE_CONFIG" | base64 -d > ~/.kube/config
-            chmod 600 ~/.kube/config
-            export KUBECONFIG=~/.kube/config
-
-            # Refresh ArgoCD applications to trigger sync
-            if command -v argocd &> /dev/null; then
-                log_info "ArgoCD CLI available, refreshing applications..."
-                # Get list of applications in the namespace and refresh them
-                ARGO_APPS=$(kubectl get applications.argoproj.io -n argocd -o jsonpath='{.items[?(@.spec.destination.namespace=="'"$NAMESPACE"'")].metadata.name}' 2>/dev/null || echo "")
-
-                if [[ -n "$ARGO_APPS" ]]; then
-                    for app in $ARGO_APPS; do
-                        log_info "Refreshing ArgoCD application: $app"
-                        argocd app get "$app" --refresh || log_warning "Failed to refresh ArgoCD app: $app"
-                    done
-                    log_success "ArgoCD applications refreshed"
-                else
-                    log_warning "No ArgoCD applications found in namespace $NAMESPACE"
-                fi
-            else
-                log_warning "ArgoCD CLI not available, manual sync may be required"
-            fi
-        fi
+        # Note: ArgoCD applications are configured with automated sync
+        # They will automatically detect git changes and sync when repository is updated
+        log_info "ArgoCD applications configured for automated sync - no manual intervention needed"
 
         log_success "Enhanced deployment process completed!"
 
@@ -386,37 +371,48 @@ if [[ "$DEPLOY" == "true" ]]; then
             chmod 600 ~/.kube/config
             export KUBECONFIG=~/.kube/config
 
-            # Wait for ingress to be ready and get URLs
-            SERVICE_URLS=""
-            MAX_WAIT=300  # 5 minutes
-            WAIT_INTERVAL=10
+            # Check if there are any resources in the namespace first
+            NAMESPACE_RESOURCES=$(kubectl get all,ingress -n "$NAMESPACE" -o json 2>/dev/null | jq '.items | length' 2>/dev/null || echo "0")
 
-            for i in $(seq 1 $((MAX_WAIT / WAIT_INTERVAL))); do
-                log_info "Waiting for ingress to be ready (attempt $i/$((MAX_WAIT / WAIT_INTERVAL)))"
+            if [[ "$NAMESPACE_RESOURCES" == "0" ]]; then
+                log_warning "No resources found in namespace $NAMESPACE yet"
+                log_info "This is normal if ArgoCD applications haven't synced yet"
+                log_info "Please check ArgoCD interface - applications should sync automatically"
+                SERVICE_URLS="Applications are syncing via ArgoCD - check ArgoCD interface for status"
+            else
+                # Wait for ingress to be ready and get URLs
+                SERVICE_URLS=""
+                MAX_WAIT=300  # 5 minutes
+                WAIT_INTERVAL=15  # Increased interval since ArgoCD sync takes time
 
-                # Check if ingress exists and get URLs
-                INGRESS_INFO=$(kubectl get ingress -n "$NAMESPACE" -o json 2>/dev/null || echo "")
+                for i in $(seq 1 $((MAX_WAIT / WAIT_INTERVAL))); do
+                    log_info "Checking for ingress resources (attempt $i/$((MAX_WAIT / WAIT_INTERVAL)))"
 
-                if [[ -n "$INGRESS_INFO" && "$INGRESS_INFO" != "No resources found" ]]; then
-                    # Extract URLs from ingress
-                    URLS=$(echo "$INGRESS_INFO" | jq -r '.items[].spec.rules[].host' 2>/dev/null | grep -v null | head -5)
+                    # Check if ingress exists and get URLs
+                    INGRESS_INFO=$(kubectl get ingress -n "$NAMESPACE" -o json 2>/dev/null || echo "")
 
-                    if [[ -n "$URLS" ]]; then
-                        SERVICE_URLS=$(echo "$URLS" | tr '\n' ' ' | sed 's/[[:space:]]*$//')
-                        log_success "Service URLs retrieved: $SERVICE_URLS"
-                        break
+                    if [[ -n "$INGRESS_INFO" && "$INGRESS_INFO" != "No resources found" ]]; then
+                        # Extract URLs from ingress using basic shell commands instead of jq
+                        URLS=$(kubectl get ingress -n "$NAMESPACE" -o jsonpath='{.items[*].spec.rules[*].host}' 2>/dev/null | tr ' ' '\n' | grep -v '^$' | head -5 | tr '\n' ' ' | sed 's/[[:space:]]*$//')
+
+                        if [[ -n "$URLS" ]]; then
+                            SERVICE_URLS="$URLS"
+                            log_success "Service URLs retrieved: $SERVICE_URLS"
+                            break
+                        fi
                     fi
-                fi
 
-                if [[ $i -lt $((MAX_WAIT / WAIT_INTERVAL)) ]]; then
-                    log_info "Waiting ${WAIT_INTERVAL}s before next check..."
-                    sleep $WAIT_INTERVAL
-                fi
-            done
+                    if [[ $i -lt $((MAX_WAIT / WAIT_INTERVAL)) ]]; then
+                        log_info "Waiting ${WAIT_INTERVAL}s before next check..."
+                        sleep $WAIT_INTERVAL
+                    fi
+                done
 
-            if [[ -z "$SERVICE_URLS" ]]; then
-                log_warning "Could not retrieve service URLs within timeout. Please check ArgoCD interface for application status."
-                SERVICE_URLS="Check ArgoCD interface for application URLs"
+                if [[ -z "$SERVICE_URLS" ]]; then
+                    log_warning "Could not retrieve service URLs within timeout"
+                    log_info "This may be normal if applications are still syncing"
+                    SERVICE_URLS="Applications are syncing - check ArgoCD interface for application status and URLs"
+                fi
             fi
 
             # Export for summary
