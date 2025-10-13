@@ -296,7 +296,14 @@ if [[ "$DEPLOY" == "true" ]]; then
 
             # Clone or update devops-k8s repo
             if [[ ! -d "devops-k8s" ]]; then
-                git clone "https://github.com/${DEVOPS_REPO}.git" devops-k8s || log_warning "Failed to clone devops-k8s"
+                # Use SSH URL if SSH key is available, otherwise use HTTPS with token
+                if [[ -n "${DOCKER_SSH_KEY:-}" ]]; then
+                    log_info "Using SSH authentication for git operations"
+                    git clone "git@github.com:${DEVOPS_REPO}.git" devops-k8s || log_warning "Failed to clone devops-k8s"
+                else
+                    log_info "Using HTTPS authentication for git operations"
+                    git clone "https://${GITHUB_TOKEN:-${GH_PAT:-}}github.com/${DEVOPS_REPO}.git" devops-k8s || log_warning "Failed to clone devops-k8s"
+                fi
             fi
 
             if [[ -d "devops-k8s" ]]; then
@@ -309,13 +316,27 @@ if [[ "$DEPLOY" == "true" ]]; then
 
                 # Update values file
                 if [[ -f "$VALUES_FILE_PATH" ]]; then
+                    # Update both the values.yaml file and the ArgoCD application manifest
                     yq eval '.image.repository = "'${IMAGE_REPO}'" | .image.tag = "'${GIT_COMMIT_ID}'"' "$VALUES_FILE_PATH" -i
-                    if git diff --quiet HEAD "$VALUES_FILE_PATH"; then
+
+                    # Update the ArgoCD application manifest with the new image tag
+                    if [[ -f "apps/erp-ui/app.yaml" ]]; then
+                        # Use yq to update the image tag in the ArgoCD application
+                        yq eval '(.spec.source.helm.values | select(. != null) | .image.tag) = "'${GIT_COMMIT_ID}'"' "apps/erp-ui/app.yaml" -i
+                    fi
+
+                    if git diff --quiet HEAD "$VALUES_FILE_PATH" || [[ -f "apps/erp-ui/app.yaml" && $(git diff --quiet HEAD "apps/erp-ui/app.yaml") ]]; then
                         log_info "No changes to commit"
                     else
                         git add "$VALUES_FILE_PATH"
+                        [[ -f "apps/erp-ui/app.yaml" ]] && git add "apps/erp-ui/app.yaml"
                         git commit -m "${APP_NAME}:${GIT_COMMIT_ID} released" || log_warning "Git commit failed"
-                        git push || log_warning "Git push failed"
+                        # Use appropriate authentication method for push
+                        if [[ -n "${DOCKER_SSH_KEY:-}" ]]; then
+                            git push || log_warning "Git push failed"
+                        else
+                            git push "https://${GITHUB_TOKEN:-${GH_PAT:-}}github.com/${DEVOPS_REPO}.git" || log_warning "Git push failed"
+                        fi
                     fi
                 fi
                 cd ..
@@ -323,7 +344,84 @@ if [[ "$DEPLOY" == "true" ]]; then
             fi
         fi
 
+        # Trigger ArgoCD sync for applications
+        if [[ -n "${KUBE_CONFIG:-}" ]]; then
+            log_step "Triggering ArgoCD sync..."
+
+            # Setup kubeconfig
+            mkdir -p ~/.kube
+            echo "$KUBE_CONFIG" | base64 -d > ~/.kube/config
+            chmod 600 ~/.kube/config
+            export KUBECONFIG=~/.kube/config
+
+            # Refresh ArgoCD applications to trigger sync
+            if command -v argocd &> /dev/null; then
+                log_info "ArgoCD CLI available, refreshing applications..."
+                # Get list of applications in the namespace and refresh them
+                ARGO_APPS=$(kubectl get applications.argoproj.io -n argocd -o jsonpath='{.items[?(@.spec.destination.namespace=="'"$NAMESPACE"'")].metadata.name}' 2>/dev/null || echo "")
+
+                if [[ -n "$ARGO_APPS" ]]; then
+                    for app in $ARGO_APPS; do
+                        log_info "Refreshing ArgoCD application: $app"
+                        argocd app get "$app" --refresh || log_warning "Failed to refresh ArgoCD app: $app"
+                    done
+                    log_success "ArgoCD applications refreshed"
+                else
+                    log_warning "No ArgoCD applications found in namespace $NAMESPACE"
+                fi
+            else
+                log_warning "ArgoCD CLI not available, manual sync may be required"
+            fi
+        fi
+
         log_success "Enhanced deployment process completed!"
+
+        # Wait for service URLs and retrieve them
+        if [[ -n "${KUBE_CONFIG:-}" ]]; then
+            log_step "Retrieving service URLs..."
+
+            # Setup kubeconfig
+            mkdir -p ~/.kube
+            echo "$KUBE_CONFIG" | base64 -d > ~/.kube/config
+            chmod 600 ~/.kube/config
+            export KUBECONFIG=~/.kube/config
+
+            # Wait for ingress to be ready and get URLs
+            SERVICE_URLS=""
+            MAX_WAIT=300  # 5 minutes
+            WAIT_INTERVAL=10
+
+            for i in $(seq 1 $((MAX_WAIT / WAIT_INTERVAL))); do
+                log_info "Waiting for ingress to be ready (attempt $i/$((MAX_WAIT / WAIT_INTERVAL)))"
+
+                # Check if ingress exists and get URLs
+                INGRESS_INFO=$(kubectl get ingress -n "$NAMESPACE" -o json 2>/dev/null || echo "")
+
+                if [[ -n "$INGRESS_INFO" && "$INGRESS_INFO" != "No resources found" ]]; then
+                    # Extract URLs from ingress
+                    URLS=$(echo "$INGRESS_INFO" | jq -r '.items[].spec.rules[].host' 2>/dev/null | grep -v null | head -5)
+
+                    if [[ -n "$URLS" ]]; then
+                        SERVICE_URLS=$(echo "$URLS" | tr '\n' ' ' | sed 's/[[:space:]]*$//')
+                        log_success "Service URLs retrieved: $SERVICE_URLS"
+                        break
+                    fi
+                fi
+
+                if [[ $i -lt $((MAX_WAIT / WAIT_INTERVAL)) ]]; then
+                    log_info "Waiting ${WAIT_INTERVAL}s before next check..."
+                    sleep $WAIT_INTERVAL
+                fi
+            done
+
+            if [[ -z "$SERVICE_URLS" ]]; then
+                log_warning "Could not retrieve service URLs within timeout. Please check ArgoCD interface for application status."
+                SERVICE_URLS="Check ArgoCD interface for application URLs"
+            fi
+
+            # Export for summary
+            export SERVICE_URLS
+        fi
     fi
 
 else
