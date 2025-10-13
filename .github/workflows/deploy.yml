@@ -29,4 +29,4 @@ jobs:
       deployment_success_message: BengoERP UI deployment completed! The UI should be accessible via the URLs above.
       application_display_name: BengoERP UI
       # Standard file skipping for UI (no payment integrations)
-      skip_files: "localhost*.pem,*.key,*.crt"
+      skip_files: "localhost*.pem,*.key,*.crt" #<--- Standard file skipping for UI (no payment integrations)
