@@ -197,85 +197,9 @@ if [[ "$DEPLOY" == "true" ]]; then
     docker push "${IMAGE_REPO}:${GIT_COMMIT_ID}"
     log_success "Container pushed to registry"
 
-    # Use centralized reusable workflow for deployment
-    log_info "Calling centralized deployment workflow..."
-
-    # Set up environment for workflow call
-    export GITHUB_TOKEN=${GITHUB_TOKEN:-}
-    export GITHUB_REPOSITORY=${GITHUB_REPOSITORY:-}
-    export GITHUB_SHA=${GITHUB_SHA:-}
-
-    # For cross-repository workflow triggering, use a PAT with workflow permissions
-    # The default GITHUB_TOKEN only has permissions for the current repository
-    export GH_TOKEN=${GH_PAT:-${GITHUB_TOKEN}}
-
-    # Call the reusable workflow with app-specific parameters
-    gh workflow run 196475028 \
-        --repo Bengo-Hub/devops-k8s \
-        --ref main \
-        --field app_name="${APP_NAME}" \
-        --field registry_server="${REGISTRY_SERVER}" \
-        --field registry_namespace="${REGISTRY_NAMESPACE}" \
-        --field deploy=true \
-        --field values_file_path="${VALUES_FILE_PATH}" \
-        --field namespace="${NAMESPACE}" \
-        --field git_user="${GIT_USER}" \
-        --field git_email="${GIT_EMAIL}" \
-        --field devops_repo="${DEVOPS_REPO}" \
-        --field setup_databases="${SETUP_DATABASES}" \
-        --field db_types="${DB_TYPES}" \
-        --field env_secret_name="${ENV_SECRET_NAME}" \
-        --field provider="${PROVIDER}" \
-        --field contabo_api="${CONTABO_API}" \
-        --field ssh_deploy="${SSH_DEPLOY}" \
-        --field ssh_host="${SSH_HOST:-}" \
-        --field ssh_user="${SSH_USER:-}" \
-        --field ssh_port="${SSH_PORT:-22}" \
-        --field deployment_summary_title="${DEPLOYMENT_SUMMARY_TITLE:-BengoERP UI Deployment Summary}" \
-        --field deployment_success_message="${DEPLOYMENT_SUCCESS_MESSAGE:-BengoERP UI deployment completed! The UI should be accessible via the URLs above.}" \
-        --field application_display_name="${APPLICATION_DISPLAY_NAME:-BengoERP UI}"
-
-    log_success "Deployment workflow initiated successfully!"
-
-    # Wait for service URLs if deployment was enabled
-    if [[ "$DEPLOY" == "true" ]]; then
-      log_info "Waiting for service URLs to be available..."
-
-      # Wait up to 5 minutes for the workflow to complete and get URLs
-      workflow_wait_time=300
-      workflow_check_interval=30
-      elapsed=0
-
-      while [[ $elapsed -lt $workflow_wait_time ]]; do
-        log_info "Checking for service URLs... (${elapsed}s/${workflow_wait_time}s)"
-
-        # Check if the workflow run has completed and has service_urls output
-        if gh run list --repo Bengo-Hub/devops-k8s --workflow=196475028 --limit=1 --json conclusion,databaseId --jq '.[] | select(.conclusion == "success") | .databaseId' >/dev/null 2>&1; then
-          log_info "Deployment workflow completed, fetching service URLs..."
-
-          # Get the latest successful run and extract service URLs
-          RUN_ID=$(gh run list --repo Bengo-Hub/devops-k8s --workflow=196475028 --limit=1 --json databaseId --jq '.[0].databaseId')
-          SERVICE_URLS=$(gh run view "$RUN_ID" --log | grep -A 10 "service_urls<<" | tail -n +2 | head -n -1 | sed 's/^  //')
-
-          if [[ -n "$SERVICE_URLS" && "$SERVICE_URLS" != *"⏳ Services still starting up"* ]]; then
-            log_success "Service URLs discovered:"
-            echo "$SERVICE_URLS"
-            break
-          fi
-        fi
-
-        sleep $workflow_check_interval
-        elapsed=$((elapsed + workflow_check_interval))
-      done
-
-      if [[ $elapsed -ge $workflow_wait_time ]]; then
-        log_warning "Timeout waiting for service URLs. Check ArgoCD sync status manually."
-      fi
-    fi
-
-else
-    log_info "Deploy mode disabled (DEPLOY=${DEPLOY}). Build completed but not deployed."
-fi
+    # Note: Reusable workflow is now called directly from deploy.yml
+    # using proper GitHub Actions syntax: uses: Bengo-Hub/devops-k8s/.github/workflows/reusable-build-deploy.yml@main
+    log_info "Deployment will be handled by GitHub Actions workflow in deploy.yml"
 
 # =============================================================================
 # DEPLOYMENT SUMMARY
@@ -290,7 +214,7 @@ echo "Image: ${IMAGE_REPO}:${GIT_COMMIT_ID}"
 echo "Deploy Mode: ${DEPLOY}"
 echo "SSH Support: $([[ "$SSH_CONFIGURED" == "true" ]] && echo '✅ Enabled' || echo '❌ Disabled')"
 echo "Databases: $([[ "$SETUP_DATABASES" == "true" ]] && echo "✅ $DB_TYPES" || echo '❌ Disabled')"
-echo "Helm Update: $([[ "$DEPLOY" == "true" ]] && echo '✅ Initiated' || echo '❌ Skipped')"
+echo "Helm Update: $([[ "$DEPLOY" == "true" ]] && echo '✅ Handled by deploy.yml workflow' || echo '❌ Skipped')"
 
 # Display service URLs if available
 if [[ "$DEPLOY" == "true" && -n "${SERVICE_URLS:-}" ]]; then

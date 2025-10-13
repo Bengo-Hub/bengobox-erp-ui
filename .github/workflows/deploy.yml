@@ -36,34 +36,30 @@ jobs:
         echo "APPLICATION_DISPLAY_NAME=BengoERP UI" >> $GITHUB_ENV
 
     - name: Run production deployment
-      env:
-        DOCKER_SSH_KEY: ${{ secrets.DOCKER_SSH_KEY }}
-        KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+      uses: Bengo-Hub/devops-k8s/.github/workflows/reusable-build-deploy.yml@main
+      with:
+        app_name: erp-ui
+        registry_server: docker.io
+        registry_namespace: codevertex
+        deploy: true
+        values_file_path: apps/erp-ui/values.yaml
+        namespace: erp
+        git_user: ${{ secrets.GIT_USER }}
+        git_email: ${{ secrets.GIT_EMAIL }}
+        devops_repo: Bengo-Hub/devops-k8s
+        setup_databases: false
+        provider: contabo
+        contabo_api: true
+        deployment_summary_title: BengoERP UI Deployment Summary
+        deployment_success_message: BengoERP UI deployment completed! The UI should be accessible via the URLs above.
+        application_display_name: BengoERP UI
+      secrets:
         REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
         REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
-        GITHUB_SHA: ${{ github.sha }}
-        DEPLOY: true
-        SETUP_DATABASES: false
-        DB_TYPES: postgres,redis
-        NAMESPACE: erp
-        ENV_SECRET_NAME: erp-ui-env
-        REGISTRY_SERVER: docker.io
-        REGISTRY_NAMESPACE: codevertex
-        VALUES_FILE_PATH: apps/erp-ui/values.yaml
-        GIT_USER: ${{ secrets.GIT_USER }}
-        GIT_EMAIL: ${{ secrets.GIT_EMAIL }}
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        GH_PAT: ${{ secrets.GH_PAT }}
-        # SSH deployment variables
-        SSH_HOST: ${{ secrets.SSH_HOST }}
-        SSH_USER: ${{ secrets.SSH_USER }}
+        KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
         SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-        PROVIDER: contabo
-        CONTABO_API: true
-        # Generic branding variables
-        DEPLOYMENT_SUMMARY_TITLE: BengoERP UI Deployment Summary
-        DEPLOYMENT_SUCCESS_MESSAGE: BengoERP UI deployment completed! The UI should be accessible via the URLs above.
-        APPLICATION_DISPLAY_NAME: BengoERP UI
-      run: |
-        chmod +x build.sh
-        ./build.sh
+        DOCKER_SSH_KEY: ${{ secrets.DOCKER_SSH_KEY }}
+        CONTABO_CLIENT_ID: ${{ secrets.CONTABO_CLIENT_ID }}
+        CONTABO_CLIENT_SECRET: ${{ secrets.CONTABO_CLIENT_SECRET }}
+        CONTABO_API_USERNAME: ${{ secrets.CONTABO_API_USERNAME }}
+        CONTABO_API_PASSWORD: ${{ secrets.CONTABO_API_PASSWORD }}
