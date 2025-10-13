@@ -43,12 +43,13 @@ jobs:
         REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
         GITHUB_SHA: ${{ github.sha }}
         DEPLOY: true
-        SETUP_DATABASES: ${{ env.SETUP_DATABASES }}
-        NAMESPACE: ${{ env.NAMESPACE }}
-        ENV_SECRET_NAME: ${{ env.ENV_SECRET_NAME }}
-        REGISTRY_SERVER: ${{ env.REGISTRY_SERVER }}
-        REGISTRY_NAMESPACE: ${{ env.REGISTRY_NAMESPACE }}
-        VALUES_FILE_PATH: ${{ env.VALUES_FILE_PATH }}
+        SETUP_DATABASES: false
+        DB_TYPES: postgres,redis
+        NAMESPACE: erp
+        ENV_SECRET_NAME: erp-ui-env
+        REGISTRY_SERVER: docker.io
+        REGISTRY_NAMESPACE: codevertex
+        VALUES_FILE_PATH: apps/erp-ui/values.yaml
         GIT_USER: ${{ secrets.GIT_USER }}
         GIT_EMAIL: ${{ secrets.GIT_EMAIL }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -59,9 +60,9 @@ jobs:
         PROVIDER: contabo
         CONTABO_API: true
         # Generic branding variables
-        DEPLOYMENT_SUMMARY_TITLE: ${{ env.DEPLOYMENT_SUMMARY_TITLE }}
-        DEPLOYMENT_SUCCESS_MESSAGE: ${{ env.DEPLOYMENT_SUCCESS_MESSAGE }}
-        APPLICATION_DISPLAY_NAME: ${{ env.APPLICATION_DISPLAY_NAME }}
+        DEPLOYMENT_SUMMARY_TITLE: BengoERP UI Deployment Summary
+        DEPLOYMENT_SUCCESS_MESSAGE: BengoERP UI deployment completed! The UI should be accessible via the URLs above.
+        APPLICATION_DISPLAY_NAME: BengoERP UI
       run: |
         chmod +x build.sh
         ./build.sh
