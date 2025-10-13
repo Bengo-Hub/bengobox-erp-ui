@@ -288,6 +288,16 @@ if [[ "$DEPLOY" == "true" ]]; then
                 fi
                 log_success "JWT secret configured"
             fi
+
+            # Create/Update docker registry pull secret if credentials are provided
+            if [[ -n "${REGISTRY_USERNAME:-}" && -n "${REGISTRY_PASSWORD:-}" ]]; then
+                log_step "Configuring image pull secret for registry ${REGISTRY_SERVER}"
+                kubectl -n "$NAMESPACE" create secret docker-registry registry-credentials \
+                  --docker-server="${REGISTRY_SERVER}" \
+                  --docker-username="${REGISTRY_USERNAME}" \
+                  --docker-password="${REGISTRY_PASSWORD}" \
+                  --dry-run=client -o yaml | kubectl apply -f - || log_warning "Failed to create image pull secret"
+            fi
         fi
 
         # Helm values update (moved from reusable workflow)
@@ -329,6 +339,11 @@ if [[ "$DEPLOY" == "true" ]]; then
                 if [[ -f "$VALUES_FILE_PATH" ]]; then
                     # Update both the values.yaml file and the ArgoCD application manifest
                     yq eval '.image.repository = "'${IMAGE_REPO}'" | .image.tag = "'${GIT_COMMIT_ID}'"' "$VALUES_FILE_PATH" -i
+
+                    # If registry credentials exist, ensure image pull secret is referenced in Helm values
+                    if [[ -n "${REGISTRY_USERNAME:-}" && -n "${REGISTRY_PASSWORD:-}" ]]; then
+                        yq eval '.image.pullSecrets = [{"name":"registry-credentials"}]' -i "$VALUES_FILE_PATH"
+                    fi
 
                     # Update the ArgoCD application manifest with the new image tag
                     if [[ -f "apps/erp-ui/app.yaml" ]]; then
