@@ -309,7 +309,7 @@ if [[ "$DEPLOY" == "true" ]]; then
 
                 # Update values file
                 if [[ -f "$VALUES_FILE_PATH" ]]; then
-                    yq -yi ".image.repository = \"${IMAGE_REPO}\" | .image.tag = \"${GIT_COMMIT_ID}\"" "$VALUES_FILE_PATH"
+                    yq eval '.image.repository = "'${IMAGE_REPO}'" | .image.tag = "'${GIT_COMMIT_ID}'"' "$VALUES_FILE_PATH" -i
                     if git diff --quiet HEAD "$VALUES_FILE_PATH"; then
                         log_info "No changes to commit"
                     else
