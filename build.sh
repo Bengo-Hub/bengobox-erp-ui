@@ -303,14 +303,14 @@ if [[ "$DEPLOY" == "true" ]]; then
                         log_success "SSH clone successful"
                     else
                         log_warning "SSH clone failed, trying HTTPS authentication"
-                        git clone "https://${GITHUB_TOKEN:-${GH_PAT:-}}github.com/${DEVOPS_REPO}.git" devops-k8s || {
+                        git clone "https://${GITHUB_TOKEN:-${GH_PAT:-}}@github.com/${DEVOPS_REPO}.git" devops-k8s || {
                             log_error "Failed to clone devops-k8s repository"
                             exit 1
                         }
                     fi
                 else
                     log_info "Using HTTPS authentication for git operations"
-                    git clone "https://${GITHUB_TOKEN:-${GH_PAT:-}}github.com/${DEVOPS_REPO}.git" devops-k8s || {
+                    git clone "https://${GITHUB_TOKEN:-${GH_PAT:-}}@github.com/${DEVOPS_REPO}.git" devops-k8s || {
                         log_error "Failed to clone devops-k8s repository"
                         exit 1
                     }
@@ -346,7 +346,7 @@ if [[ "$DEPLOY" == "true" ]]; then
                         if [[ -n "${DOCKER_SSH_KEY:-}" ]]; then
                             git push || log_warning "Git push failed"
                         else
-                            git push "https://${GITHUB_TOKEN:-${GH_PAT:-}}github.com/${DEVOPS_REPO}.git" || log_warning "Git push failed"
+                            git push "https://${GITHUB_TOKEN:-${GH_PAT:-}}@github.com/${DEVOPS_REPO}.git" || log_warning "Git push failed"
                         fi
                     fi
                 fi
