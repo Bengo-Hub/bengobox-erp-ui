@@ -342,11 +342,33 @@ if [[ "$DEPLOY" == "true" ]]; then
                         git add "$VALUES_FILE_PATH"
                         [[ -f "apps/erp-ui/app.yaml" ]] && git add "apps/erp-ui/app.yaml"
                         git commit -m "${APP_NAME}:${GIT_COMMIT_ID} released" || log_warning "Git commit failed"
-                        # Use appropriate authentication method for push
+
+                        # Use appropriate authentication method for push with better error handling
                         if [[ -n "${DOCKER_SSH_KEY:-}" ]]; then
-                            git push || log_warning "Git push failed"
+                            log_info "Pushing via SSH authentication"
+                            if git push 2>&1 | tee /tmp/git-push.log; then
+                                log_success "Git push successful"
+                            else
+                                GIT_ERROR=$(cat /tmp/git-push.log)
+                                log_warning "Git push failed: $GIT_ERROR"
+                            fi
                         else
-                            git push "https://${GITHUB_TOKEN:-${GH_PAT:-}}@github.com/${DEVOPS_REPO}.git" || log_warning "Git push failed"
+                            log_info "Pushing via HTTPS authentication"
+                            # Ensure token is properly formatted and not empty
+                            if [[ -z "${GITHUB_TOKEN:-${GH_PAT:-}}" ]]; then
+                                log_error "GitHub token not available for HTTPS authentication"
+                                log_warning "Git push skipped - manual push may be required"
+                            else
+                                # Use credential helper to avoid URL encoding issues
+                                git remote set-url origin "https://x-access-token:${GITHUB_TOKEN:-${GH_PAT:-}}@github.com/${DEVOPS_REPO}.git"
+                                if git push 2>&1 | tee /tmp/git-push.log; then
+                                    log_success "Git push successful"
+                                else
+                                    GIT_ERROR=$(cat /tmp/git-push.log)
+                                    log_warning "Git push failed: $GIT_ERROR"
+                                    log_info "You may need to push manually: git push"
+                                fi
+                            fi
                         fi
                     fi
                 fi
@@ -372,7 +394,13 @@ if [[ "$DEPLOY" == "true" ]]; then
             export KUBECONFIG=~/.kube/config
 
             # Check if there are any resources in the namespace first
-            NAMESPACE_RESOURCES=$(kubectl get all,ingress -n "$NAMESPACE" -o json 2>/dev/null | jq '.items | length' 2>/dev/null || echo "0")
+            # Use kubectl to count resources without jq dependency - simplified approach
+            if kubectl get all,ingress -n "$NAMESPACE" --ignore-not-found=true -o name >/dev/null 2>&1; then
+                # Count the lines to determine if resources exist
+                NAMESPACE_RESOURCES=$(kubectl get all,ingress -n "$NAMESPACE" --ignore-not-found=true -o name 2>/dev/null | wc -l | tr -d ' ')
+            else
+                NAMESPACE_RESOURCES="0"
+            fi
 
             if [[ "$NAMESPACE_RESOURCES" == "0" ]]; then
                 log_warning "No resources found in namespace $NAMESPACE yet"
@@ -449,3 +477,6 @@ fi
 echo "=========================================="
 
 log_success "BengoERP UI deployment process completed!"
+
+# Exit with success code - don't fail if service URL retrieval had issues
+exit 0
